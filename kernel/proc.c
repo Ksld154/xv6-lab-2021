@@ -120,6 +120,13 @@ found:
         return 0;
     }
 
+    // Allocate a page for usyspage
+    if ((p->usyspage = (struct usyscall *)kalloc()) == 0) {
+        freeproc(p);
+        release(&p->lock);
+        return 0;
+    }
+
     // An empty user page table.
     p->pagetable = proc_pagetable(p);
     if (p->pagetable == 0) {
@@ -135,8 +142,7 @@ found:
     p->context.sp = p->kstack + PGSIZE;
 
     // Set up pid for usyscall and ugetpid()
-    memset(&p->usyscall, 0, sizeof(p->usyscall));
-    p->usyscall->pid = (uint64)p->pid;
+    p->usyspage->pid = (uint64)p->pid;
 
     return p;
 }
@@ -150,9 +156,9 @@ freeproc(struct proc *p) {
         kfree((void *)p->trapframe);
     p->trapframe = 0;
 
-    if (p->usyscall)
-        kfree((void *)p->usyscall);
-    p->usyscall = 0;
+    if (p->usyspage)
+        kfree((void *)p->usyspage);
+    p->usyspage = 0;
 
     if (p->pagetable)
         proc_freepagetable(p->pagetable, p->sz);
@@ -197,7 +203,7 @@ proc_pagetable(struct proc *p) {
     }
 
     if (mappages(pagetable, USYSCALL, PGSIZE,
-                 (uint64)(p->usyscall), PTE_R) < 0) {
+                 (uint64)(p->usyspage), PTE_R | PTE_U) < 0) {
         uvmunmap(pagetable, TRAMPOLINE, 1, 0);
         uvmunmap(pagetable, TRAPFRAME, 1, 0);
 
