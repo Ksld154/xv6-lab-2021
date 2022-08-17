@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "*.geom": "glsl",
+        "*.asm": "asm",
+        "*.txt": "plaintext",
+        "types.h": "c"
+    }
+}
