@@ -88,3 +88,29 @@ sys_uptime(void) {
     release(&tickslock);
     return xticks;
 }
+
+uint64
+sys_sigalarm(void) {
+    int alarm_interval;
+    uint64 handler_ptr;
+
+    if (argint(0, &alarm_interval) < 0 || argaddr(1, &handler_ptr) < 0)
+        return -1;
+
+    myproc()->alarm_interval = alarm_interval;
+    myproc()->alarm_handler = handler_ptr;
+    myproc()->ticks_passed = 0;
+
+    return 0;
+}
+
+uint64
+sys_sigreturn(void) {
+    // TODO
+    // recover trapframe from trapframe_backup before return back to user space
+    // printf("size: %d %d\n", sizeof(struct trapframe), sizeof(myproc()->trapframe_backup));
+    memmove(myproc()->trapframe, myproc()->trapframe_backup, sizeof(struct trapframe));
+    myproc()->ticks_passed = 0;
+
+    return 0;
+}
