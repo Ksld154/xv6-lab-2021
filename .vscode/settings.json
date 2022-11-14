@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "*.geom": "glsl",
+        "*.asm": "asm",
+        "*.txt": "plaintext",
+        "typeinfo": "c",
+        "memlayout.h": "c",
+        "spinlock.h": "c"
+    }
+}
