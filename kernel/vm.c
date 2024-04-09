@@ -291,7 +291,10 @@ int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz) {
         // COW_fork(): child should share pages with parent
         // disable PTE_W to prevent writing pte
         pa = PTE2PA(*pte);
-        *pte = (*pte & ~PTE_W) | PTE_COW;
+
+        if (*pte & PTE_W) {
+            *pte = (*pte & ~PTE_W) | PTE_COW;
+        }
         flags = PTE_FLAGS(*pte);
 
         // COW_fork(): copy parent's page table to child's page table
@@ -327,12 +330,12 @@ int copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len) {
     uint64 n, va0, pa0;
 
     while (len > 0) {
+        if (uvmiscowpage(dstva)) {
+            uvmcowcopy(dstva);
+        }
+
         va0 = PGROUNDDOWN(dstva);
         pa0 = walkaddr(pagetable, va0);
-
-        if (uvmiscowpage(va0)) {
-            pa0 = uvmcowcopy(va0);
-        }
 
         if (pa0 == 0)
             return -1;

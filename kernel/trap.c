@@ -45,7 +45,7 @@ void usertrap(void) {
     p->trapframe->epc = r_sepc();
 
     int scause = r_scause();
-    if (scause == 13 || scause == 15) {
+    if (scause == 15) {
         uint64 pagefault_va = r_stval();
         if (pagefault_va >= KERNBASE || (pagefault_va < p->trapframe->sp && pagefault_va >= (p->trapframe->sp - PGSIZE))) {
             p->killed = 1;
