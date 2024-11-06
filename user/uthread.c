@@ -72,10 +72,14 @@ void thread_schedule(void) {
         next_thread->state = RUNNING;
         t = current_thread;
         current_thread = next_thread;
+
         /* YOUR CODE HERE
          * Invoke thread_switch to switch from t to next_thread:
          * thread_switch(??, ??);
          */
+
+        thread_switch((uint64)&t->context, (uint64)&current_thread->context);
+
     } else
         next_thread = 0;
 }
@@ -87,7 +91,11 @@ void thread_create(void (*func)()) {
         if (t->state == FREE) break;
     }
     t->state = RUNNABLE;
+
     // YOUR CODE HERE
+    memset(&t->context, 0, sizeof t->context);
+    t->context.ra = (uint64)func;
+    t->context.sp = (uint64)t->stack + STACK_SIZE;
 }
 
 void thread_yield(void) {
