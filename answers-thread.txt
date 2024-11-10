@@ -1,0 +1,11 @@
+Method 1: Use 1 mutex lock for whole hash table, and lock it whenever there is an insert.
+Problem: 
+Even the insert would be thread-safe, however insert procedure will degrade into single thread,
+since the mutex only allow 1 thread doing insert at the same time, so there wont be any accleration compared to original single-thread version.
+What's worse, mutex lock/unlock will cause extra cpu overhead, so it may be even slower than original version.
+
+Method2: Assign a mutex to each table entry.
+Observation: when inserting a hash bucket, we only need to assure that no other thread is also insert or modifying this bucket.
+But other thread can insert or modify other buckets, and it wont cause any race condition.
+As a result, we can use a mutex for each hash bucket, and lock it when we need to modify it.
+Small drawback: we need allocate more mutexes, which would cause a little more memory usage.
