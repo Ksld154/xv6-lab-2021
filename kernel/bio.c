@@ -77,9 +77,9 @@ bget(uint dev, uint blockno)
 {
   const uint bucket_idx = hash(dev, blockno);
   struct bucket *bucket = &bcache.buckets[bucket_idx];
+  acquire(&bucket->lock);
 
   // Is the block already cached?
-  acquire(&bucket->lock);
   for (struct buf *b = bucket->head.next; b != &bucket->head; b = b->next) {
     if (b->dev == dev && b->blockno == blockno) {
       b->refcnt++;
