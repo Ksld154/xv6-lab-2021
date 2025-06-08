@@ -400,6 +400,37 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
     return addr;
   }
+  bn -= NINDIRECT;
+
+  if (bn < N_2ND_INDIRECT) { // bn == 733
+    // allocate a 1st-level indirect block if necessary
+    if ((addr = ip->addrs[NDIRECT + 1]) == 0) {
+      addr = balloc(ip->dev);
+      ip->addrs[NDIRECT + 1] = addr;
+    }
+
+    // Check if the 2nd-level indirect block exists; allocate if necessary.
+    bp = bread(ip->dev, addr);
+    a = (uint*) bp->data;
+    if ((addr = a[bn / NINDIRECT]) == 0) { // Fix: Should access 'a' (the 1st-level indirect block data)
+      addr = balloc(ip->dev);
+      a[bn / NINDIRECT] = addr; // Store the address in the 1st-level indirect block itself
+      log_write(bp); // Log the change to the 1st-level indirect block
+    }
+    brelse(bp);
+
+    // now read the 2nd-level indirect block
+    bp = bread(ip->dev, addr);
+    a = (uint*) bp->data;
+    if ((addr = a[bn % NINDIRECT]) == 0) {
+      // allocate a new block for this data block
+      addr = balloc(ip->dev);
+      a[bn % NINDIRECT] = addr; // store the address in the 2nd-level indirect block
+      log_write(bp);
+    }
+    brelse(bp);
+    return addr;
+  }
 
   panic("bmap: out of range");
 }
@@ -430,6 +461,31 @@ itrunc(struct inode *ip)
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  if (ip->addrs[NDIRECT+1]) {
+    bp = bread(ip->dev, ip->addrs[NDIRECT + 1]);
+    a = (uint*)bp->data;
+
+    for(j = 0; j < NINDIRECT; j++){
+      struct buf *bp2 = bread(ip->dev, a[j]);
+      uint *a2 = (uint*)bp2->data;
+
+      for (int k = 0; k < NINDIRECT; k++) {
+        if (a2[k]) {
+          bfree(ip->dev, a2[k]);
+        }
+      }
+      brelse(bp2);
+
+      if(a[j]) {
+        bfree(ip->dev, a[j]);
+        a[j] = 0; // Clear the address after freeing
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT+1]);
+    ip->addrs[NDIRECT+1] = 0;
   }
 
   ip->size = 0;
