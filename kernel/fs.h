@@ -59,3 +59,4 @@ struct dirent {
   char name[DIRSIZ];
 };
 
+#define MAX_SYMLINK_DEPTH 10

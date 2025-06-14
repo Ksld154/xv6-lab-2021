@@ -322,6 +322,32 @@ sys_open(void)
     return -1;
   }
 
+  if (ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)) {
+    int depth = 0;
+    char symlink_target[MAXPATH];
+    while (ip->type == T_SYMLINK) {
+      if (depth == MAX_SYMLINK_DEPTH) {
+        iunlockput(ip);
+        end_op();
+        return -1; // Too many symlink levels
+      }
+      depth++;
+
+      // 1. read symlink target path from file
+      memset(symlink_target, 0, sizeof(symlink_target));
+      readi(ip, 0, (uint64)symlink_target, 0, MAXPATH);
+      symlink_target[MAXPATH - 1] = '\0'; // Ensure null-termination
+      iunlockput(ip);
+
+      // 2. resolve symlink target path
+      if ((ip = namei(symlink_target)) == 0) {
+        end_op();
+        return -1; // Target of symlink does not exist
+      }
+      ilock(ip);
+    }
+  }
+
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
       fileclose(f);
