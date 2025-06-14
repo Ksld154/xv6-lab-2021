@@ -487,5 +487,29 @@ sys_pipe(void)
 
 uint64
 sys_symlink(void) {
+  char target[MAXPATH];
+  char path[MAXPATH];
+  struct inode *ip;
+  uint64 target_len;
+
+  if (argstr(0, target, MAXPATH) < 0 ||
+      argstr(1, path, MAXPATH) < 0) {
+    return -1;
+  }
+
+  begin_op();
+  if ((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
+    end_op();
+    return -1; // failed to create symlink
+  }
+
+  target_len = strlen(target);
+  if (writei(ip, 0, (uint64)target, 0, target_len) != target_len) {
+    return -1; // failed to write target to symlink
+  }
+
+  iunlockput(ip);
+  end_op();
+
   return 0;
 }
