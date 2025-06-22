@@ -484,3 +484,15 @@ sys_pipe(void)
   }
   return 0;
 }
+
+void*
+sys_mmap(void)
+{
+  return (void*)0; // mmap is not implemented in this user library
+}
+
+int
+sys_munmap(void)
+{
+  return -1; // munmap is not implemented in this user library
+}
