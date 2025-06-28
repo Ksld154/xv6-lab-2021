@@ -485,10 +485,86 @@ sys_pipe(void)
   return 0;
 }
 
-void*
+// return lowest address in mmap_area that is not used by any other VMA
+uint64 get_free_mmap_addr(struct vm_area *vma, int len) {
+  uint64 top_addr = TRAPFRAME;
+  uint64 bottom_addr = TRAPFRAME - len;
+
+  for (int i = 0; i < N_MMAP_VMA; i++) {
+    if (!vma[i].valid) {
+      continue; // skip invalid VMA
+    }
+
+    if ((top_addr <= vma[i].addr + vma[i].length) ||
+        (bottom_addr <= vma[i].addr)) {
+      top_addr = vma[i].addr;
+      bottom_addr = vma[i].addr - vma[i].length;
+    }
+  }
+
+  return bottom_addr;
+}
+
+uint64
 sys_mmap(void)
 {
-  return (void*)0; // mmap is not implemented in this user library
+  uint64 addr;
+  int  prot, flags, fd, length, offset;
+  struct file* f;
+
+  if (argaddr(0, &addr) < 0 ||
+      argint(1, &length) < 0 ||
+      argint(2, &prot) < 0 ||
+      argint(3, &flags) < 0 ||
+      argfd(4, &fd, &f) < 0 ||
+      argint(5, &offset) < 0
+  ) {
+    return -1;
+  }
+
+  if (addr != 0 || offset != 0) {
+    panic("sys_mmap: addr and offset must be 0");
+  }
+
+  if (!f->writable && (prot & PROT_WRITE) && !(flags & MAP_PRIVATE)) {
+    // If the file is not writable, we cannot map it with write permission
+    printf("sys_mmap: file is not writable\n");
+    return -1;
+  }
+
+  // step1. find a empty VMA in the process's mmap_area
+  struct proc *p = myproc();
+  struct vm_area *vma = 0;
+  for (int i = 0; i < N_MMAP_VMA; i++) {
+    if (p->mmap_area[i].valid == 0) {
+      vma = &p->mmap_area[i];
+      break;
+    }
+  }
+  if (vma == 0) {
+    panic("sys_mmap: no empty VMA");
+  }
+
+  // step2. allocate free virtual memory for the VMA
+  length = PGROUNDUP(length); // round up length to page size
+  uint64 free_addr = get_free_mmap_addr(p->mmap_area, length);
+  if (free_addr == 0) {
+    panic("sys_mmap: no free virtual memory");
+  }
+
+  // step3. map the VMA to the free virtual memory
+  vma->valid = 1; // mark the VMA as valid
+  vma->addr = free_addr;
+  vma->length = length;
+  vma->protection = prot;
+  vma->flags = flags;
+  vma->fd = fd;
+  vma->offset = offset;
+  vma->file = f;
+
+  filedup(f); // increase the reference count of the file
+
+  return free_addr; // return the start address of the VMA
 }
 
 int

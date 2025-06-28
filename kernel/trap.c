@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -15,6 +19,70 @@ extern char trampoline[], uservec[], userret[];
 void kernelvec();
 
 extern int devintr();
+
+int mmap_handler(uint64 addr) {
+  struct proc *p = myproc();
+
+  // Find the VMA that contains the address.
+  struct vm_area *vma = 0;
+  for (int i = 0; i < N_MMAP_VMA; i++) {
+    if (p->mmap_area[i].valid && p->mmap_area[i].addr <= addr &&
+        p->mmap_area[i].addr + p->mmap_area[i].length > addr) {
+      vma = &p->mmap_area[i];
+      break;
+    }
+  }
+  if (!vma) {
+    printf("mmap_handler: no valid VMA for address %p in pid=%d\n", addr, p->pid);
+    return -1;
+  }
+
+  // If the page is not readable and the VMA is shared, we cannot handle it.
+  if (r_scause() == 13 && !vma->file->readable && vma->flags & MAP_SHARED) {
+    printf("mmap_handler: page not readable for address %p in pid=%d\n", addr, p->pid);
+    return -1;
+  }
+  if (r_scause() == 15 && !vma->file->writable && vma->flags & MAP_SHARED) {
+    printf("mmap_handler: page not writable for address %p in pid=%d\n", addr, p->pid);
+    return -1;
+  }
+
+  // allocate physical memory for the page, zero it out,
+  uint64 pa = (uint64)kalloc();
+  if (pa == 0) {
+    printf("mmap_handler: kalloc failed for address %p in pid=%d\n", addr, p->pid);
+    return -1;
+  }
+  memset((void*)pa, 0, PGSIZE);
+
+  // set permission bits for the page.
+  int permission = PTE_V | PTE_U |
+                 ((vma->protection & PROT_READ)  ? PTE_R : 0) |
+                 ((vma->protection & PROT_WRITE) ? PTE_W : 0) |
+                 ((vma->protection & PROT_EXEC)  ? PTE_X : 0);
+
+  // map the page into the process's page table.
+  if (mappages(p->pagetable, addr, PGSIZE, pa, permission) < 0) {
+    printf("mmap_handler: mappages failed for address %p in pid=%d\n", addr, p->pid);
+    kfree((void*)pa);
+    return -1;
+  }
+
+  uint64 offset = vma->offset + (addr - vma->addr);
+
+  // read the content from the file and write it to the allocated page
+  struct file *f = vma->file;
+  ilock(f->ip);
+  if (readi(f->ip, 0, pa, offset, PGSIZE) < 0) {
+    printf("mmap_handler: readi failed for address %p in pid=%d\n", addr, p->pid);
+    iunlock(f->ip);
+    kfree((void*)pa);
+    return -1;
+  }
+  iunlock(f->ip);
+
+  return 0;
+}
 
 void
 trapinit(void)
@@ -67,6 +135,11 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15) {
+    if (mmap_handler(r_stval()) < 0) {
+      printf("usertrap(): mmap_handler failed for address %p pid=%d\n", r_stval(), p->pid);
+      p->killed = 1;
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
