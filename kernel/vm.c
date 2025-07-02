@@ -5,6 +5,11 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "proc.h"
+#include "file.h"
+#include "fcntl.h"
 
 /*
  * the kernel's page table.
@@ -431,4 +436,45 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int
+write_back_mmap(const uint64 src_va, const uint len, struct vm_area *vma)
+{
+  // This function writes back the content of the VMA to the file
+  // and frees the VMA from the page table.
+
+  if (!(vma->protection & PTE_W) && !(vma->flags & MAP_SHARED)) {
+    // printf("write_back_mmap: VMA at %p is not writable\n", vma->addr);
+    return 0;
+  }
+
+  // step1. write the content of the VMA to the file
+  struct proc *p = myproc();
+  for (uint64 addr = PGROUNDDOWN(src_va); addr < (src_va + len); addr += PGSIZE) {
+    // Check if this page is actually mapped in the page table
+    pte_t *pte = walk(p->pagetable, addr, 0);
+    if (pte == 0 || (*pte & PTE_V) == 0) {
+      // Page not mapped, so it cannot be dirty. Skip it.
+      continue;
+    }
+    if (PTE_FLAGS(*pte) == PTE_V)
+      panic("uvmunmap: not a leaf");
+
+    struct file *f = vma->file;
+    begin_op();
+    ilock(f->ip);
+    uint64 offset = vma->offset + (addr - vma->addr);
+    printf("write_back_mmap: writing back VMA at %p to file %d, offset %p\n", vma->addr, f->ip->inum, offset);
+    if (writei(f->ip, 1, addr, offset, PGSIZE) < 0) {
+      iunlock(f->ip);
+      end_op();
+      printf("write_back_mmap: writei failed for VMA at %p\n", vma->addr);
+      return -1;
+    }
+    iunlock(f->ip);
+    end_op();
+  }
+
+  return 0;
 }

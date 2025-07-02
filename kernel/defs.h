@@ -8,6 +8,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct vm_area;
 
 // bio.c
 void            binit(void);
@@ -170,6 +171,7 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+int             write_back_mmap(const uint64 src_va, const uint len, struct vm_area *vma);
 
 // plic.c
 void            plicinit(void);

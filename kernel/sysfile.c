@@ -570,5 +570,62 @@ sys_mmap(void)
 int
 sys_munmap(void)
 {
-  return -1; // munmap is not implemented in this user library
+  uint64 addr;
+  int length;
+
+  if (argaddr(0, &addr) < 0 || argint(1, &length) < 0) {
+    return -1;
+  }
+
+  // step1. find the VMA that contains the address
+  struct proc *p = myproc();
+  struct vm_area *vma = 0;
+  for (int i = 0; i < N_MMAP_VMA; i++) {
+    if (p->mmap_area[i].valid && p->mmap_area[i].addr <= addr &&
+        p->mmap_area[i].addr + p->mmap_area[i].length > addr) {
+      vma = &p->mmap_area[i]; // found the VMA
+      break;
+    }
+  }
+  if (vma == 0) {
+    printf("sys_munmap: no valid VMA for address %p in pid=%d\n", addr, p->pid);
+    return -1;
+  }
+
+  // step2. block partial unmap
+  if (addr > vma->addr &&
+      addr + length <= vma->addr + vma->length) {
+    printf("sys_munmap: partial unmap is not allowed for address %p in pid=%d\n", addr, p->pid);
+    return -1;
+  }
+
+  // step3. write break to the file, and free the VMA from page table
+  uint64 page_addr = PGROUNDDOWN(addr);
+  int page_length = PGROUNDUP(length);
+
+  if (write_back_mmap(page_addr, page_length, vma) < 0) {
+    printf("sys_munmap: write_back_map failed for address %p in pid=%d\n", addr, p->pid);
+    return -1;
+  }
+
+  // step4. free the VMA from page table
+  printf("sys_munmap: unmapping VMA at %p, length %d, number of pages %d\n",
+         page_addr, page_length, page_length / PGSIZE);
+  uvmunmap(p->pagetable, page_addr, page_length / PGSIZE, 1);
+
+  // step5. free the VMA
+  if (addr == vma->addr) { // unmap from the beginning
+    vma->addr += page_length;
+    vma->length -= page_length;
+    vma->offset += page_length;
+  } else { // unmap from the end
+    vma->length -= page_length;
+  }
+
+  if (vma->length <= 0) {
+    vma->valid = 0;
+    fileclose(vma->file);
+  }
+
+  return 0;
 }
