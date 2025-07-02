@@ -289,6 +289,16 @@ fork(void)
   }
   np->sz = p->sz;
 
+  // copy vma to child
+  for (i = 0; i < N_MMAP_VMA; i++) {
+    if (p->mmap_area[i].valid == 1) {
+      memmove(&np->mmap_area[i], &p->mmap_area[i], sizeof(struct vm_area));
+      filedup(np->mmap_area[i].file); // increase reference count of the file
+    } else {
+      np->mmap_area[i].valid = 0; // mark as invalid if not copied
+    }
+  }
+
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -399,6 +409,12 @@ wait(uint64 addr)
 
         havekids = 1;
         if(np->state == ZOMBIE){
+          // free vma
+          for (int i = 0; i < N_MMAP_VMA; i++) {
+            uvmunmap(np->pagetable, np->mmap_area[i].addr, np->mmap_area[i].length / PGSIZE, 1);
+            np->mmap_area[i].valid = 0;
+          }
+
           // Found one.
           pid = np->pid;
           if(addr != 0 && copyout(p->pagetable, addr, (char *)&np->xstate,
